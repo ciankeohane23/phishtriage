@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import email
 import email.policy
+import hashlib
 import re
 from dataclasses import dataclass, field
 from email.utils import parseaddr
@@ -37,6 +38,8 @@ class Link:
 class Attachment:
     filename: str
     content_type: str
+    sha256: str = ""
+    """Hash of the decoded file, so it can be looked up or blocked without opening it."""
 
     @property
     def extension(self) -> str:
@@ -71,6 +74,7 @@ class ParsedEmail:
     return_path: str = ""
     to: str = ""
     date: str = ""
+    message_id: str = ""
     auth: AuthResults = field(default_factory=AuthResults)
     body_text: str = ""
     links: list[Link] = field(default_factory=list)
@@ -157,6 +161,7 @@ def _from_message(msg) -> ParsedEmail:
         return_path=str(msg.get("Return-Path", "")).strip(),
         to=str(msg.get("To", "")).strip(),
         date=str(msg.get("Date", "")).strip(),
+        message_id=str(msg.get("Message-ID", "")).strip(),
         auth=_auth_results(str(msg.get("Authentication-Results", ""))),
     )
 
@@ -166,9 +171,12 @@ def _from_message(msg) -> ParsedEmail:
             continue
         filename = part.get_filename()
         if filename:
-            parsed.attachments.append(
-                Attachment(filename=str(filename), content_type=part.get_content_type())
-            )
+            payload = part.get_payload(decode=True) or b""
+            parsed.attachments.append(Attachment(
+                filename=str(filename),
+                content_type=part.get_content_type(),
+                sha256=hashlib.sha256(payload).hexdigest() if payload else "",
+            ))
             continue
         try:
             content = part.get_content()

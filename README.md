@@ -1,5 +1,7 @@
 # phishtriage
 
+![tests](https://github.com/ciankeohane23/phishtriage/actions/workflows/tests.yml/badge.svg)
+
 A command line tool that reads a suspicious `.eml` file, works out what is wrong
 with it, and writes the note that goes on the ticket.
 
@@ -70,6 +72,7 @@ failed check is often a misconfigured mail server. It takes two to reach High.
 ```bash
 python -m phishtriage.cli suspicious.eml              # full report
 python -m phishtriage.cli *.eml --json                # machine readable
+python -m phishtriage.cli suspicious.eml --report      # Markdown ticket, see below
 python -m phishtriage.cli suspicious.eml --no-ai      # no model call
 python -m phishtriage.cli suspicious.eml --trusted mycompany.com
 ```
@@ -79,6 +82,47 @@ Lookalike detection only means something relative to domains worth imitating, so
 this is the knob that actually gets tuned in use.
 
 Exit code is 1 when anything lands on High, so it can be used in a pipeline.
+
+## The investigation ticket
+
+`--report` writes the case up as Markdown that can be pasted straight into a Jira
+ticket or case note. Trimmed output for the invoice sample:
+
+```
+## Phishing triage: High risk (score 19)
+
+### Observables (defanged)
+| Type       | Value                                   |
+|------------|-----------------------------------------|
+| Domain     | `billing-dept-secure[.]com`             |
+| IP         | `198[.]51[.]100[.]24`                   |
+| URL        | `hxxp://198[.]51[.]100[.]24/pay/inv88213` |
+| Attachment | `INV-88213.zip` (application/zip)       |
+| SHA-256    | `a8253813131c65f9...0719eb40a0`         |
+
+### Ask the reporter
+- [ ] Did the recipient click any link in the message?
+- [ ] Did the recipient enter a password or payment details anywhere?
+- [ ] Did the recipient open or download the attachment?
+
+### Recommended next steps
+1. Escalate to a senior analyst before taking any containment action.
+2. Search the mail gateway for the same sender, subject or link hosts to find other recipients.
+...
+```
+
+Three decisions behind it:
+
+- **Everything is defanged.** `https://` becomes `hxxps://` and `.` becomes `[.]`.
+  A ticket is read and forwarded by people who did not do the triage, and a live
+  link in it is one mis-click from the thing the ticket is about. A property test
+  generates random URLs and checks none survive defanging as a clickable link.
+- **Attachments are hashed, not opened.** The SHA-256 of the decoded file is what
+  gets looked up or blocked in the endpoint tool.
+- **Questions and next steps come from the findings, not a model.** The reporter
+  is only asked about the things this email actually did: no attachment, no
+  attachment question. High always starts with escalation, because containment
+  is not a decision to make alone from a single tool's output.
 
 ## Install
 
@@ -97,10 +141,10 @@ library `email`, `html.parser` and `difflib`. Only the optional note needs
 python -m pytest
 ```
 
-45 tests. Most are ordinary cases, one per check, including the cases that should
+56 tests, run on Python 3.11 to 3.13 by GitHub Actions on every push. Most are ordinary cases, one per check, including the cases that should
 *not* fire, which are the ones that matter for false positives.
 
-Two are property-based, using Hypothesis:
+Three are property-based, using Hypothesis:
 
 - **Parsing arbitrary bytes never raises.** Mail arrives in whatever shape the
   sender chose, including deliberately malformed. A crash in the parser is an
@@ -110,7 +154,10 @@ Two are property-based, using Hypothesis:
   combinations of findings. If some combination could lower the score, an analyst
   could make a message look safer by noticing more wrong with it.
 
-Both of these are properties that are true for every input, which is hard to
+- **Defanged URLs are never clickable.** Random URLs go in, and nothing that
+  comes out may still contain `http://` or `https://`, or an undefanged dot.
+
+All three are properties that are true for every input, which is hard to
 express as example tests and easy to express as a property.
 
 ## What it does not do
@@ -133,6 +180,7 @@ phishtriage/
   indicators.py   the checks, all deterministic
   scoring.py      weights and bands
   summary.py      the optional written note, and the fallback that replaces it
+  report.py       the Markdown ticket: defanging, observables, next steps
   cli.py          argument handling and output
 ```
 

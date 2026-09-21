@@ -9,6 +9,7 @@ from dataclasses import asdict
 
 from .indicators import Config, run_all
 from .parsing import parse_file
+from .report import render_report
 from .scoring import score
 from .summary import DEFAULT_MODEL, note
 
@@ -27,6 +28,12 @@ def analyse(path: str, cfg: Config, use_model: bool, model: str) -> dict:
         "from": mail.from_addr,
         "from_display": mail.from_display,
         "reply_to": mail.reply_to,
+        "return_path": mail.return_path,
+        "to": mail.to,
+        "date": mail.date,
+        "message_id": mail.message_id,
+        "link_hrefs": [link.href for link in mail.links],
+        "attachments": [asdict(a) for a in mail.attachments],
         "verdict": {"band": verdict.band, "score": verdict.score, "counts": verdict.counts},
         "findings": [asdict(f) for f in findings],
         "note": text,
@@ -65,7 +72,10 @@ def main(argv: list[str] | None = None) -> int:
         description="Triage a suspicious email and explain the verdict.",
     )
     ap.add_argument("paths", nargs="+", metavar="EML", help=".eml file(s) to analyse")
-    ap.add_argument("--json", action="store_true", help="emit JSON instead of a report")
+    output = ap.add_mutually_exclusive_group()
+    output.add_argument("--json", action="store_true", help="emit JSON instead of a report")
+    output.add_argument("--report", action="store_true",
+                        help="emit a Markdown investigation ticket with defanged observables")
     ap.add_argument("--no-ai", action="store_true",
                     help="skip the model and use the deterministic note")
     ap.add_argument("--model", default=DEFAULT_MODEL, help=f"model id (default {DEFAULT_MODEL})")
@@ -86,6 +96,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.json:
         print(json.dumps(results if len(results) > 1 else results[0], indent=2))
+    elif args.report:
+        print("\n---\n\n".join(render_report(result) for result in results))
     else:
         for result in results:
             print(render(result))
