@@ -1,0 +1,7 @@
+# The detection engine needs none of these — it is standard library only.
+# Optional: the written note at the end of a report.
+anthropic>=1.0.0
+
+# Tests.
+pytest>=8.0
+hypothesis>=6.100

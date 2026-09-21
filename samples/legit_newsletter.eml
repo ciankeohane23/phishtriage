@@ -1,0 +1,21 @@
+Return-Path: <newsletter@ucc.ie>
+Authentication-Results: mx.example.net; spf=pass smtp.mailfrom=ucc.ie; dkim=pass header.d=ucc.ie; dmarc=pass header.from=ucc.ie
+From: UCC Student News <newsletter@ucc.ie>
+To: student@example.com
+Subject: Library opening hours for reading week
+Date: Mon, 14 Sep 2026 09:12:04 +0100
+Message-ID: <20260914091204.4471@ucc.ie>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+
+Hello,
+
+The Boole Library will run extended hours during reading week, opening at
+08:00 and closing at midnight from Monday to Friday.
+
+Study space can be booked through the usual system at https://libguides.ucc.ie
+and there is no change to the booking rules.
+
+Regards,
+Student Communications
+University College Cork

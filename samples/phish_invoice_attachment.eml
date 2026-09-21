@@ -1,0 +1,33 @@
+Return-Path: <accounts@billing-dept-secure.com>
+Authentication-Results: mx.example.net; spf=softfail smtp.mailfrom=billing-dept-secure.com; dkim=none
+From: Accounts Payable <accounts@billing-dept-secure.com>
+To: finance@example.com
+Subject: Outstanding invoice INV-88213 - final notice
+Date: Wed, 16 Sep 2026 22:07:11 +0000
+Message-ID: <inv88213.20260916@billing-dept-secure.com>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="m2_77ab19"
+
+--m2_77ab19
+Content-Type: text/plain; charset="utf-8"
+
+Dear Sir or Madam,
+
+Our records show invoice INV-88213 remains unpaid. This is a final notice.
+Payment is required immediately to avoid termination of your service
+agreement.
+
+The remittance portal is available at http://198.51.100.24/pay/inv88213
+
+Please confirm your bank details on the portal so the payment can be matched.
+
+Accounts Payable
+
+--m2_77ab19
+Content-Type: application/zip; name="INV-88213.zip"
+Content-Disposition: attachment; filename="INV-88213.zip"
+Content-Transfer-Encoding: base64
+
+UEsDBBQAAAAIAAAAIQAAAAAAAAAAAAAAAAAKAAAASU5WLTg4MjEz
+
+--m2_77ab19--
