@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from dataclasses import asdict
 
 from .indicators import Config, run_all
+from .jira import JiraConfig, JiraError, create_issue, issue_payload
 from .parsing import parse_file
 from .report import render_report
 from .scoring import score
@@ -76,6 +78,10 @@ def main(argv: list[str] | None = None) -> int:
     output.add_argument("--json", action="store_true", help="emit JSON instead of a report")
     output.add_argument("--report", action="store_true",
                         help="emit a Markdown investigation ticket with defanged observables")
+    ap.add_argument("--jira", action="store_true",
+                    help="also create a Jira ticket per email (configured by JIRA_* variables)")
+    ap.add_argument("--jira-dry-run", action="store_true",
+                    help="print the Jira request body instead of sending it; needs no token")
     ap.add_argument("--no-ai", action="store_true",
                     help="skip the model and use the deterministic note")
     ap.add_argument("--model", default=DEFAULT_MODEL, help=f"model id (default {DEFAULT_MODEL})")
@@ -94,6 +100,13 @@ def main(argv: list[str] | None = None) -> int:
             print(f"no such file: {path}", file=sys.stderr)
             return 2
 
+    if args.jira_dry_run:
+        cfg_jira = JiraConfig(url="https://example.atlassian.net", email="", token="",
+                              project=os.environ.get("JIRA_PROJECT", "SEC"))
+        payloads = [issue_payload(r, cfg_jira) for r in results]
+        print(json.dumps(payloads if len(payloads) > 1 else payloads[0], indent=2))
+        return 0
+
     if args.json:
         print(json.dumps(results if len(results) > 1 else results[0], indent=2))
     elif args.report:
@@ -101,6 +114,17 @@ def main(argv: list[str] | None = None) -> int:
     else:
         for result in results:
             print(render(result))
+
+    if args.jira:
+        try:
+            cfg_jira = JiraConfig.from_env()
+            for result in results:
+                link = create_issue(result, cfg_jira)
+                # stderr, so --json and --report output stays clean to redirect
+                print(f"jira: created {link} for {result['file']}", file=sys.stderr)
+        except JiraError as err:
+            print(f"jira: {err}", file=sys.stderr)
+            return 3
 
     return 1 if any(r["verdict"]["band"] == "High" for r in results) else 0
 

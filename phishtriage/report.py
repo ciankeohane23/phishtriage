@@ -127,75 +127,98 @@ def next_steps(band: str, codes: set[str]) -> list[str]:
     return steps
 
 
-def _section(title: str) -> list[str]:
-    return ["", f"### {title}", ""]
+class Code(str):
+    """A value to show as literal code: a defanged observable, a hash, a file name."""
 
 
-def render_report(result: dict) -> str:
+def ticket(result: dict) -> tuple[str, list[tuple]]:
+    """The ticket as (title, blocks), independent of how it will be rendered.
+
+    Blocks are ("heading", text), ("para", text), ("italic", text),
+    ("table", headers, rows), ("checklist", items) or ("numbered", items).
+    Table cells are plain strings or `Code`. Markdown and Jira both render from
+    this, so the pasted ticket and the created one can never disagree.
+    """
     v = result["verdict"]
     codes = {f["code"] for f in result["findings"]}
     obs = observables(result)
+    title = f"Phishing triage: {v['band']} risk (score {v['score']})"
 
-    out = [
-        f"## Phishing triage: {v['band']} risk (score {v['score']})",
-        "",
-        "| | |",
-        "|---|---|",
-        f"| Subject | {_cell(result['subject'] or '(none)')} |",
-        f"| From | {_cell(result['from_display'])} `{defang(result['from'])}` |",
-    ]
+    header = [["Subject", result["subject"] or "(none)"],
+              ["From", Code(f"{result['from_display']} <{defang(result['from'])}>".strip())]]
     if result.get("reply_to"):
-        out.append(f"| Reply-To | `{defang(result['reply_to'])}` |")
+        header.append(["Reply-To", Code(defang(result["reply_to"]))])
     if result.get("to"):
-        out.append(f"| To | `{defang(result['to'])}` |")
+        header.append(["To", Code(defang(result["to"]))])
     if result.get("date"):
-        out.append(f"| Date | {_cell(result['date'])} |")
+        header.append(["Date", result["date"]])
     if result.get("message_id"):
-        out.append(f"| Message-ID | `{defang(result['message_id'])}` |")
-    out.append(f"| File | `{result['file']}` |")
+        header.append(["Message-ID", Code(defang(result["message_id"]))])
+    header.append(["File", Code(result["file"])])
 
-    out += _section("Summary")
-    out.append(result["note"])
-    out.append("")
-    out.append(f"_Written by: {'model, from the findings below' if result['note_source'] == 'model' else 'rules template'}._")
+    blocks: list[tuple] = [("table", None, header)]
 
-    out += _section(f"Findings ({len(result['findings'])})")
+    blocks += [("heading", "Summary"), ("para", result["note"])]
+    source = "model, from the findings below" if result["note_source"] == "model" else "rules template"
+    blocks.append(("italic", f"Written by: {source}."))
+
+    blocks.append(("heading", f"Findings ({len(result['findings'])})"))
     if result["findings"]:
-        out += ["| Severity | Finding | Evidence |", "|---|---|---|"]
-        for f in result["findings"]:
-            out.append(f"| {f['severity']} | {_cell(f['title'])} | {_cell(_defang_text(f['detail']))} |")
+        blocks.append(("table", ["Severity", "Finding", "Evidence"],
+                       [[f["severity"], f["title"], _defang_text(f["detail"])]
+                        for f in result["findings"]]))
     else:
-        out.append("None of the checks fired.")
+        blocks.append(("para", "None of the checks fired."))
 
-    out += _section("Observables (defanged)")
-    rows = [("Address", a) for a in obs["addresses"]]
-    rows += [("Domain", d) for d in obs["domains"]]
-    rows += [("IP", i) for i in obs["ips"]]
-    rows += [("URL", u) for u in obs["urls"]]
-    if rows or obs["attachments"]:
-        out += ["| Type | Value |", "|---|---|"]
-        out += [f"| {kind} | `{defang(value)}` |" for kind, value in rows]
-        for a in obs["attachments"]:
-            out.append(f"| Attachment | `{a['filename']}` ({a['content_type']}) |")
-            if a.get("sha256"):
-                out.append(f"| SHA-256 | `{a['sha256']}` |")
-    else:
-        out.append("None.")
+    blocks.append(("heading", "Observables (defanged)"))
+    rows = [["Address", Code(defang(a))] for a in obs["addresses"]]
+    rows += [["Domain", Code(defang(d))] for d in obs["domains"]]
+    rows += [["IP", Code(defang(i))] for i in obs["ips"]]
+    rows += [["URL", Code(defang(u))] for u in obs["urls"]]
+    for a in obs["attachments"]:
+        rows.append(["Attachment", Code(f"{a['filename']} ({a['content_type']})")])
+        if a.get("sha256"):
+            rows.append(["SHA-256", Code(a["sha256"])])
+    blocks.append(("table", ["Type", "Value"], rows) if rows else ("para", "None."))
 
     questions = sorted({QUESTIONS[c] for c in codes if c in QUESTIONS})
     if questions:
-        out += _section("Ask the reporter")
-        out += [f"- [ ] {q}" for q in questions]
+        blocks += [("heading", "Ask the reporter"), ("checklist", questions)]
 
-    out += _section("Recommended next steps")
-    out += [f"{i}. {step}" for i, step in enumerate(next_steps(v["band"], codes), 1)]
+    blocks += [("heading", "Recommended next steps"),
+               ("numbered", next_steps(v["band"], codes))]
+    return title, blocks
+
+
+def render_report(result: dict) -> str:
+    """The ticket as Markdown, for pasting into a ticket or case note."""
+    title, blocks = ticket(result)
+    out = [f"## {title}"]
+    for block in blocks:
+        kind = block[0]
+        if kind == "heading":
+            out += ["", f"### {block[1]}"]
+        elif kind == "para":
+            out += ["", block[1]]
+        elif kind == "italic":
+            out += ["", f"_{block[1]}_"]
+        elif kind == "table":
+            _, headers, rows = block
+            out += ["", "| " + " | ".join(headers or ["", ""]) + " |",
+                    "|" + "---|" * len(rows[0])]
+            out += ["| " + " | ".join(_md_cell(c) for c in row) + " |" for row in rows]
+        elif kind == "checklist":
+            out += [""] + [f"- [ ] {item}" for item in block[1]]
+        elif kind == "numbered":
+            out += [""] + [f"{i}. {item}" for i, item in enumerate(block[1], 1)]
     out.append("")
     return "\n".join(out)
 
 
-def _cell(text: str) -> str:
+def _md_cell(value: str) -> str:
     """Keep a value from breaking the Markdown table it sits in."""
-    return str(text).replace("|", "\\|").replace("\n", " ")
+    text = str(value).replace("|", "\\|").replace("\n", " ")
+    return f"`{text}`" if isinstance(value, Code) else text
 
 
 def _defang_text(text: str) -> str:

@@ -73,6 +73,7 @@ failed check is often a misconfigured mail server. It takes two to reach High.
 python -m phishtriage.cli suspicious.eml              # full report
 python -m phishtriage.cli *.eml --json                # machine readable
 python -m phishtriage.cli suspicious.eml --report      # Markdown ticket, see below
+python -m phishtriage.cli suspicious.eml --jira        # also create it in Jira
 python -m phishtriage.cli suspicious.eml --no-ai      # no model call
 python -m phishtriage.cli suspicious.eml --trusted mycompany.com
 ```
@@ -124,6 +125,39 @@ Three decisions behind it:
   attachment question. High always starts with escalation, because containment
   is not a decision to make alone from a single tool's output.
 
+## Sending it to Jira
+
+`--jira` creates the same ticket in a Jira Cloud project, one per email, through
+the REST API. Settings come from environment variables, never from arguments, so
+the API token stays out of shell history:
+
+```bash
+export JIRA_URL=https://your-site.atlassian.net
+export JIRA_EMAIL=you@example.com
+export JIRA_API_TOKEN=...      # id.atlassian.com > Security > API tokens
+export JIRA_PROJECT=SEC
+python -m phishtriage.cli samples/*.eml --jira
+```
+
+The ticket is labelled `phishtriage` and `risk-high`, `risk-medium` or `risk-low`,
+so a Jira filter can build the queue. Observables stay defanged inside Jira.
+`--jira-dry-run` prints the exact request body without sending anything.
+
+Some choices worth stating:
+
+- **Standard library only.** It uses `urllib`, so adding Jira did not add a
+  dependency to the detection engine.
+- **The token is only sent over HTTPS.** A `JIRA_URL` starting `http://` is refused,
+  except for `localhost`, which the tests use.
+- **Jira failing does not lose the triage.** The report still prints; the tool
+  then exits with code 3 and Jira's own error message, never the token.
+- **One source for both tickets.** The Markdown report and the Jira ticket
+  render from the same structure, so they cannot drift apart.
+
+The Jira tests run against a real HTTP server on localhost that stands in for
+Jira and records what it receives, which checks the auth header, the payload and
+the error handling without an Atlassian account.
+
 ## Install
 
 ```bash
@@ -141,7 +175,7 @@ library `email`, `html.parser` and `difflib`. Only the optional note needs
 python -m pytest
 ```
 
-56 tests, run on Python 3.11 to 3.13 by GitHub Actions on every push. Most are ordinary cases, one per check, including the cases that should
+70 tests, run on Python 3.11 to 3.13 by GitHub Actions on every push. Most are ordinary cases, one per check, including the cases that should
 *not* fire, which are the ones that matter for false positives.
 
 Three are property-based, using Hypothesis:
@@ -180,7 +214,8 @@ phishtriage/
   indicators.py   the checks, all deterministic
   scoring.py      weights and bands
   summary.py      the optional written note, and the fallback that replaces it
-  report.py       the Markdown ticket: defanging, observables, next steps
+  report.py       the ticket: defanging, observables, next steps, Markdown output
+  jira.py         the same ticket as a Jira issue, via the REST API
   cli.py          argument handling and output
 ```
 
